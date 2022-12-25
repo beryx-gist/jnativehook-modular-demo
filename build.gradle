@@ -1,0 +1,61 @@
+plugins {
+    id 'application'
+    id 'org.beryx.jlink' version '2.26.0'
+}
+
+
+group 'org.jnativehook.example'
+version '1.0.0'
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'com.github.kwhat:jnativehook:2.2.2'
+}
+
+application {
+    mainModule = "org.jnativehook.demo"
+    mainClass = "org.jnativehook.example.NativeHookDemo"
+    applicationDefaultJvmArgs = ['-Djnativehook.lib.locator=org.jnativehook.example.CustomLocator']
+}
+
+jlink {
+    options = ['--strip-debug', '--compress', '2', '--no-header-files', '--no-man-pages']
+    jpackage {
+        def currentOs = org.gradle.internal.os.OperatingSystem.current()
+        if (currentOs.windows) {
+            installerType = 'msi'
+            installerOptions = ['--win-per-user-install', '--win-dir-chooser', '--win-menu']
+        }
+    }
+}
+
+configurations {
+    resolvableImplementation { extendsFrom implementation }
+}
+
+tasks.jlink.doLast {
+    configurations.resolvableImplementation.files.findAll { f ->
+        f.name.contains "jnativehook"
+    }.each { nativeJar ->
+        def destDir = file("$imageDir/bin/native-libs")
+        delete destDir
+        mkdir destDir
+
+        def baseLibPath = 'com/github/kwhat/jnativehook/lib'
+        def zt = zipTree(nativeJar).matching {
+            include "$baseLibPath/**"
+        }
+        def expandedPath = zt.asFileTree.tree.mirror.dir.path
+        zt.files.each { f ->
+            def pathInLib = (f.path - expandedPath).substring(1)
+            pathInLib = pathInLib.replace('\\', '/')
+            pathInLib -= "$baseLibPath/"
+            def destFilePath = destDir.toPath().resolve(pathInLib)
+            mkdir destFilePath.parent
+            java.nio.file.Files.copy(f.toPath(), destFilePath)
+        }
+    }
+}
